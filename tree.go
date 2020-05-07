@@ -409,7 +409,7 @@ func (n *node) insertChild(numParams uint16, path string, fullPath string, handl
 // nodeValue holds return values of (*Node).getValue method
 type nodeValue struct {
 	handlers HandlersChain
-	params   Params
+	params   *Params
 	tsr      bool
 	// fullPath string
 }
@@ -419,8 +419,8 @@ type nodeValue struct {
 // If no handle can be found, a TSR (trailing slash redirect) recommendation is
 // made if a handle exists with an extra (without the) trailing slash for the
 // given path.
-func (n *node) getValue(path string, po Params, unescape bool) (value nodeValue) {
-	value.params = po
+func (n *node) getValue(path string, po func() *Params, unescape bool) (value nodeValue) {
+	value = nodeValue{}
 walk: // Outer loop for walking the tree
 	for {
 		prefix := n.path
@@ -487,20 +487,38 @@ walk: // Outer loop for walking the tree
 				}
 
 				// save param value
-				if cap(value.params) < int(n.maxParams) {
-					value.params = make(Params, 0, n.maxParams)
-				}
-				i := len(value.params)
-				value.params = value.params[:i+1] // expand slice within preallocated capacity
-				value.params[i].Key = n.path[1:]
-				val := path[:end]
-				if unescape {
-					var err error
-					if value.params[i].Value, err = url.QueryUnescape(val); err != nil {
-						value.params[i].Value = val // fallback, in case of error
+				// if cap(value.params) < int(n.maxParams) {
+				// 	value.params = make(Params, 0, n.maxParams)
+				// }
+				// i := len(value.params)
+				// value.params = value.params[:i+1] // expand slice within preallocated capacity
+				// value.params[i].Key = n.path[1:]
+				// val := path[:end]
+				// if unescape {
+				// 	var err error
+				// 	if value.params[i].Value, err = url.QueryUnescape(val); err != nil {
+				// 		value.params[i].Value = val // fallback, in case of error
+				// 	}
+				// } else {
+				// 	value.params[i].Value = val
+				// }
+				if po != nil {
+					if value.params == nil {
+						value.params = po()
 					}
-				} else {
-					value.params[i].Value = val
+					// Expand slice within preallocated capacity
+					i := len(*value.params)
+					*value.params = (*value.params)[:i+1]
+					val := path[:end]
+					if unescape {
+						if v, err := url.QueryUnescape(val); err == nil {
+							val = v
+						}
+					}
+					(*value.params)[i] = Param{
+						Key:   n.path[1:],
+						Value: val,
+					}
 				}
 
 				// we need to go deeper!
@@ -529,20 +547,39 @@ walk: // Outer loop for walking the tree
 				return
 
 			case catchAll:
-				// save param value
-				if cap(value.params) < int(n.maxParams) {
-					value.params = make(Params, 0, n.maxParams)
-				}
-				i := len(value.params)
-				value.params = value.params[:i+1] // expand slice within preallocated capacity
-				value.params[i].Key = n.path[2:]
-				if unescape {
-					var err error
-					if value.params[i].Value, err = url.QueryUnescape(path); err != nil {
-						value.params[i].Value = path // fallback, in case of error
+				// // save param value
+				// if cap(value.params) < int(n.maxParams) {
+				// 	value.params = make(Params, 0, n.maxParams)
+				// }
+				// i := len(value.params)
+				// value.params = value.params[:i+1] // expand slice within preallocated capacity
+				// value.params[i].Key = n.path[2:]
+				// if unescape {
+				// 	var err error
+				// 	if value.params[i].Value, err = url.QueryUnescape(path); err != nil {
+				// 		value.params[i].Value = path // fallback, in case of error
+				// 	}
+				// } else {
+				// 	value.params[i].Value = path
+				// }
+
+				// Save param value
+				if po != nil {
+					if value.params == nil {
+						value.params = po()
 					}
-				} else {
-					value.params[i].Value = path
+					// Expand slice within preallocated capacity
+					i := len(*value.params)
+					*value.params = (*value.params)[:i+1]
+					if unescape {
+						if v, err := url.QueryUnescape(path); err == nil {
+							path = v
+						}
+					}
+					(*value.params)[i] = Param{
+						Key:   n.path[2:],
+						Value: path,
+					}
 				}
 
 				value.handlers = n.handlers
